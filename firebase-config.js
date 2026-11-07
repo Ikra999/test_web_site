@@ -1,9 +1,7 @@
-// Сюда вставьте настройки вашего проекта Firebase (Project settings → Your apps → Web app → Config).
-// Пока поля пустые, сайт работает только в режиме «вдвоём на одном устройстве».
 window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",   // например: https://ваш-проект-default-rtdb.europe-west1.firebasedatabase.app
-  projectId: "",
-  appId: ""
+  apiKey: "AIzaSyDRmRGLlvE-UOW9uQ4BToFGPlgMP65EBr4",
+  authDomain: "chess-1a443.firebaseapp.com",
+  databaseURL: "https://chess-1a443-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "chess-1a443",
+  appId: "1:650707294802:web:32a05d0ada95bef4cf5d8b"
 };
