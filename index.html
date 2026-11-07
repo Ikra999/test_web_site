@@ -3,10 +3,101 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Мой сайт</title>
+  <title>ChessHub — шахматы онлайн: обычные, Atomic, Antichess</title>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <h1>Привет, мир!</h1>
-  <p>Это мой первый сайт на GitHub Pages.</p>
+<body class="theme-brown">
+  <header class="top">
+    <div class="brand"><span class="logo">♞</span><b>ChessHub</b></div>
+    <div class="spacer"></div>
+    <div class="online" id="online" title="Игроков онлайн"></div>
+    <select id="theme" title="Тема доски">
+      <option value="brown">Коричневая</option>
+      <option value="green">Зелёная</option>
+      <option value="blue">Синяя</option>
+    </select>
+    <button id="nameBtn" class="ghost" title="Сменить ник"></button>
+  </header>
+
+  <main>
+    <!-- ЛОББИ -->
+    <section id="lobby">
+      <div id="setupBanner" class="banner" hidden>
+        <b>Онлайн-режим пока не подключён.</b>
+        Чтобы играть с другими людьми, подключите бесплатную базу Firebase: впишите её настройки в файл
+        <code>firebase-config.js</code>. Пока можно играть вдвоём за одним экраном (кнопка «Играть вдвоём на этом устройстве»).
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Новая партия</h2>
+
+          <div class="label">Режим</div>
+          <div id="variantCards" class="vcards"></div>
+
+          <div class="label">Контроль времени (минуты + секунды за ход)</div>
+          <div id="presets" class="chips"></div>
+
+          <div class="label">Цвет</div>
+          <div id="colorSel" class="seg">
+            <button data-c="random" class="on">Случайный</button>
+            <button data-c="w">Белые</button>
+            <button data-c="b">Чёрные</button>
+          </div>
+
+          <div class="actions">
+            <button id="createBtn" class="primary">Создать вызов</button>
+            <button id="cancelBtn" class="danger" hidden>Отменить вызов</button>
+            <button id="localBtn" class="ghost">Играть вдвоём на этом устройстве</button>
+          </div>
+          <div id="waiting" class="waiting" hidden><span class="spin"></span> Ждём соперника… Вызов виден всем, кто в лобби.</div>
+        </div>
+
+        <div class="card">
+          <h2>Открытые вызовы</h2>
+          <div class="tablewrap">
+            <table id="seekTable">
+              <thead><tr><th>Игрок</th><th>Режим</th><th>Время</th><th>Цвет</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="noSeeks" class="muted">Пока никто не ждёт соперника. Создайте вызов слева, и другие игроки увидят его.</div>
+        </div>
+      </div>
+
+      <details class="rules card">
+        <summary>Правила режимов</summary>
+        <div class="rulegrid">
+          <div><h3>Обычные</h3><p>Классические шахматы: шах, мат, рокировка, взятие на проходе, ничья по правилу 50 ходов и троекратному повторению.</p></div>
+          <div><h3>Atomic</h3><p>Каждое взятие вызывает взрыв. Бьющая фигура, побитая фигура и все непешечные фигуры на соседних клетках исчезают. Пешки взрыв переживают. Король не может брать. Побеждает тот, кто взорвал короля соперника. Если короли стоят рядом, шахов нет.</p></div>
+          <div><h3>Antichess</h3><p>Если можно взять, брать обязательно. Король — обычная фигура: шахов и рокировки нет, пешка может превратиться и в короля. Побеждает тот, кто первым потеряет все фигуры или останется без ходов.</p></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ПАРТИЯ -->
+    <section id="game" hidden>
+      <div class="gamewrap">
+        <div class="boardcol">
+          <div id="topPlayer" class="player"></div>
+          <div id="board" class="board"></div>
+          <div id="bottomPlayer" class="player"></div>
+        </div>
+        <aside class="side card">
+          <div id="gameInfo" class="gameinfo"></div>
+          <div id="status" class="status"></div>
+          <div id="moves" class="moves"></div>
+          <div id="controls" class="ctrls"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="promo" class="modal" hidden><div class="modalbox"><div class="label">Превращение пешки</div><div id="promoChoices" class="promochoices"></div></div></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="engine.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
