@@ -1,4 +1,4 @@
-/* Шахматный движок: обычные шахматы, Atomic, Antichess */
+/* Шахматный движок: обычные шахматы, Atomic, Antichess и «Хаос» */
 (function (root) {
   'use strict';
 
@@ -13,10 +13,43 @@
   const KG = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   const DIAG = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
   const ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const QUEEN = DIAG.concat(ORTH);
 
   const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
-  function fromFEN(fen, variant) {
+  // ---------------- Хаос: расписание модификаторов ----------------
+  // Модификатор действует MOD_PLIES полуходов (по одному ходу каждого игрока),
+  // затем COOLDOWN полуход играется по обычным правилам, потом выпадает следующий.
+  // Модификатор вычисляется из seed партии, поэтому у обоих игроков он одинаковый без сервера.
+  const MOD_IDS = ['atomic', 'antichess', 'knights', 'pawnking', 'frozen', 'forward', 'swap', 'peace', 'sprint', 'kingqueen'];
+  const MOD_PLIES = 2, COOLDOWN = 1, CYCLE = MOD_PLIES + COOLDOWN;
+
+  function hash32(x) {
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+    return (x ^ (x >>> 16)) >>> 0;
+  }
+  function modIndex(seed, cycle) {
+    seed |= 0;
+    let idx = hash32(seed ^ 0x9e3779b9) % MOD_IDS.length;
+    for (let c = 1; c <= cycle; c++) {
+      const h = hash32((seed + Math.imul(c, 0x9e3779b1)) | 0);
+      // шаг 1..9: один и тот же модификатор два раза подряд не выпадает
+      idx = (idx + 1 + (h % (MOD_IDS.length - 1))) % MOD_IDS.length;
+    }
+    return idx;
+  }
+  function chaosMod(seed, ply) {
+    if (ply % CYCLE >= MOD_PLIES) return null;
+    return MOD_IDS[modIndex(seed, Math.floor(ply / CYCLE))];
+  }
+  function activeMod(s) {
+    if (s.forceMod !== undefined) return s.forceMod;
+    return s.variant === 'chaos' ? chaosMod(s.seed | 0, s.ply | 0) : null;
+  }
+
+  // ---------------- Состояние ----------------
+  function fromFEN(fen, variant, seed) {
     const [pos, turn, cast, ep, hm, fm] = fen.split(' ');
     const board = new Array(64).fill(null);
     const rows = pos.split('/');
@@ -36,11 +69,13 @@
       half: +hm || 0,
       full: +fm || 1,
       variant: variant || 'standard',
+      seed: seed | 0,
+      ply: 0,
     };
   }
 
-  function initialState(variant) {
-    return fromFEN(START_FEN, variant);
+  function initialState(variant, seed) {
+    return fromFEN(START_FEN, variant, seed);
   }
 
   function findKing(b, color) {
@@ -92,7 +127,7 @@
   }
 
   function inCheck(b, color, variant) {
-    if (variant === 'antichess') return false;
+    if (variant === 'antichess' || variant === 'chaos') return false;
     const ks = findKing(b, color);
     if (ks < 0) return false;
     const them = opp(color);
@@ -105,60 +140,88 @@
     return isAttacked(b, ks, them, false);
   }
 
+  // В «Хаосе» шахов по правилам нет, но подсветка «королю угрожают» полезна (по обычным ходам).
+  function kingAttacked(s) {
+    const k = findKing(s.board, s.turn);
+    return k >= 0 && isAttacked(s.board, k, opp(s.turn), false);
+  }
+
   function pseudoMoves(s) {
     const b = s.board, us = s.turn, them = opp(us), v = s.variant;
-    const anti = v === 'antichess', atomic = v === 'atomic';
+    const chaos = v === 'chaos', mod = activeMod(s);
+    const atomic = v === 'atomic';
+    const promos = v === 'antichess' ? ['q', 'r', 'b', 'n', 'k'] : ['q', 'r', 'b', 'n'];
+    const last = us === 'w' ? 7 : 0;
     const out = [];
     for (let i = 0; i < 64; i++) {
       const p = b[i];
       if (!p || colorOf(p) !== us) continue;
       const t = p.toLowerCase(), f = i & 7, r = i >> 3;
-      if (t === 'p') {
-        const dir = us === 'w' ? 1 : -1, start = us === 'w' ? 1 : 6, last = us === 'w' ? 7 : 0, r1 = r + dir;
+
+      // как именно ходит эта фигура (модификаторы Хаоса подменяют способ хода)
+      let kind = t;
+      if (mod) {
+        if (mod === 'frozen' && t === 'q') continue;
+        if (mod === 'knights' && t !== 'k') kind = 'n';
+        else if (mod === 'pawnking' && t === 'p') kind = 'k';
+        else if (mod === 'swap' && t === 'b') kind = 'r';
+        else if (mod === 'swap' && t === 'r') kind = 'b';
+        else if (mod === 'kingqueen' && t === 'k') kind = 'q';
+      }
+
+      const add = (to, cap, ep) => {
+        if (t === 'p' && (to >> 3) === last) {
+          for (const pr of promos) out.push({ from: i, to, promo: pr, cap });
+        } else if (ep) out.push({ from: i, to, cap, ep: true });
+        else out.push({ from: i, to, cap });
+      };
+
+      if (kind === 'p') {
+        const dir = us === 'w' ? 1 : -1, start = us === 'w' ? 1 : 6, r1 = r + dir;
         if (r1 < 0 || r1 > 7) continue;
-        const push = (to, cap, ep) => {
-          if (r1 === last) {
-            for (const pr of (anti ? ['q', 'r', 'b', 'n', 'k'] : ['q', 'r', 'b', 'n'])) out.push({ from: i, to, promo: pr, cap });
-          } else out.push({ from: i, to, cap, ep });
-        };
         if (!b[r1 * 8 + f]) {
-          push(r1 * 8 + f, false, false);
-          if (r === start && !b[(r + 2 * dir) * 8 + f]) out.push({ from: i, to: (r + 2 * dir) * 8 + f, cap: false, dbl: true });
+          add(r1 * 8 + f, false, false);
+          const r2 = r + 2 * dir;
+          if (r === start) {
+            if (!b[r2 * 8 + f]) out.push({ from: i, to: r2 * 8 + f, cap: false, dbl: true });
+          } else if (mod === 'sprint' && r2 >= 0 && r2 <= 7 && !b[r2 * 8 + f]) {
+            add(r2 * 8 + f, false, false);
+          }
         }
         for (const df of [-1, 1]) {
           const nf = f + df;
           if (nf < 0 || nf > 7) continue;
           const to = r1 * 8 + nf;
-          if (b[to] && colorOf(b[to]) === them) push(to, true, false);
-          else if (!b[to] && to === s.ep) push(to, true, true);
+          if (b[to] && colorOf(b[to]) === them) add(to, true, false);
+          else if (!b[to] && to === s.ep) add(to, true, true);
         }
-      } else if (t === 'n' || t === 'k') {
-        for (const [df, dr] of (t === 'n' ? KN : KG)) {
+      } else if (kind === 'n' || kind === 'k') {
+        for (const [df, dr] of (kind === 'n' ? KN : KG)) {
           const nf = f + df, nr = r + dr;
           if (!onb(nf, nr)) continue;
           const to = nr * 8 + nf, q = b[to];
-          if (!q) out.push({ from: i, to, cap: false });
-          else if (colorOf(q) === them) out.push({ from: i, to, cap: true });
+          if (!q) add(to, false, false);
+          else if (colorOf(q) === them) add(to, true, false);
         }
       } else {
-        const dirs = t === 'b' ? DIAG : t === 'r' ? ORTH : DIAG.concat(ORTH);
+        const dirs = kind === 'b' ? DIAG : kind === 'r' ? ORTH : QUEEN;
         for (const [df, dr] of dirs) {
           let nf = f + df, nr = r + dr;
           while (onb(nf, nr)) {
             const to = nr * 8 + nf, q = b[to];
-            if (!q) out.push({ from: i, to, cap: false });
-            else { if (colorOf(q) === them) out.push({ from: i, to, cap: true }); break; }
+            if (!q) add(to, false, false);
+            else { if (colorOf(q) === them) add(to, true, false); break; }
             nf += df; nr += dr;
           }
         }
       }
     }
-    // рокировка
-    if (!anti && s.castling) {
+    // рокировка (в Хаосе — только на «обычном» ходу и без проверки атак: шахов там нет)
+    if (v !== 'antichess' && s.castling && (!chaos || !mod)) {
       const rank = us === 'w' ? 0 : 7, ks = rank * 8 + 4;
       const K = us === 'w' ? 'K' : 'k', R = us === 'w' ? 'R' : 'r';
       if (b[ks] === K) {
-        const att = sq => isAttacked(b, sq, them, atomic);
+        const att = chaos ? () => false : sq => isAttacked(b, sq, them, atomic);
         if (s.castling.includes(us === 'w' ? 'K' : 'k') && b[ks + 3] === R && !b[ks + 1] && !b[ks + 2] &&
             !att(ks) && !att(ks + 1) && !att(ks + 2)) {
           out.push({ from: ks, to: ks + 2, cap: false, castle: 'K' });
@@ -174,13 +237,14 @@
 
   function applyMove(s, m) {
     const b = s.board.slice(), us = s.turn;
+    const mod = activeMod(s);
     const p = b[m.from];
     if (m.ep) b[m.to + (us === 'w' ? -8 : 8)] = null;
     b[m.from] = null;
     b[m.to] = m.promo ? (us === 'w' ? m.promo.toUpperCase() : m.promo) : p;
     if (m.castle === 'K') { b[m.from + 1] = b[m.from + 3]; b[m.from + 3] = null; }
     else if (m.castle === 'Q') { b[m.from - 1] = b[m.from - 4]; b[m.from - 4] = null; }
-    if (s.variant === 'atomic' && m.cap) {
+    if ((s.variant === 'atomic' || mod === 'atomic') && m.cap) {
       b[m.to] = null; // бьющая фигура взрывается
       const f = m.to & 7, r = m.to >> 3;
       for (let dr = -1; dr <= 1; dr++) {
@@ -195,6 +259,14 @@
     let c = s.castling;
     const map = { 0: 'Q', 4: 'KQ', 7: 'K', 56: 'q', 60: 'kq', 63: 'k' };
     for (const sq of [m.from, m.to]) if (map[sq]) for (const ch of map[sq]) c = c.replace(ch, '');
+    if (c) { // право рокировки пропадает, если король или ладья ушли или были взорваны
+      if (b[4] !== 'K') c = c.replace('K', '').replace('Q', '');
+      if (b[60] !== 'k') c = c.replace('k', '').replace('q', '');
+      if (b[7] !== 'R') c = c.replace('K', '');
+      if (b[0] !== 'R') c = c.replace('Q', '');
+      if (b[63] !== 'r') c = c.replace('k', '');
+      if (b[56] !== 'r') c = c.replace('q', '');
+    }
     return {
       board: b,
       turn: opp(us),
@@ -203,6 +275,8 @@
       half: p.toLowerCase() === 'p' || m.cap ? 0 : s.half + 1,
       full: s.full + (us === 'b' ? 1 : 0),
       variant: s.variant,
+      seed: s.seed,
+      ply: (s.ply | 0) + 1,
     };
   }
 
@@ -212,6 +286,23 @@
     if (v === 'antichess') {
       const caps = ms.filter(m => m.cap);
       return caps.length ? caps : ms;
+    }
+    if (v === 'chaos') {
+      // шахов нет: короля можно побить или взорвать, это победа
+      const mod = activeMod(s);
+      if (mod === 'antichess') {
+        const caps = ms.filter(m => m.cap);
+        return caps.length ? caps : ms;
+      }
+      if (mod === 'peace') {
+        const quiet = ms.filter(m => !m.cap);
+        return quiet.length ? quiet : ms;
+      }
+      if (mod === 'forward') {
+        const fw = ms.filter(m => (us === 'w' ? (m.to >> 3) >= (m.from >> 3) : (m.to >> 3) <= (m.from >> 3)));
+        return fw.length ? fw : ms;
+      }
+      return ms;
     }
     const out = [];
     for (const m of ms) {
@@ -232,6 +323,15 @@
 
   function status(s, keys) {
     const v = s.variant, us = s.turn, them = opp(us), b = s.board;
+    if (v === 'chaos') {
+      const wk = findKing(b, 'w') >= 0, bk = findKing(b, 'b') >= 0;
+      // оба короля исчезли одним взрывом — выигрывает тот, кто только что ходил
+      if (!wk || !bk) return { winner: !wk && !bk ? them : (wk ? 'w' : 'b'), why: 'kingdown' };
+      if (!legalMoves(s).length) return { winner: 'd', why: 'stalemate' };
+      if (b.every(p => !p || p.toLowerCase() === 'k')) return { winner: 'd', why: 'insufficient' };
+      if (s.half >= 100) return { winner: 'd', why: 'fifty' };
+      return null; // повторения в Хаосе не считаем: модификаторы меняют правила
+    }
     if (v === 'atomic') {
       if (findKing(b, 'w') < 0) return { winner: 'b', why: 'exploded' };
       if (findKing(b, 'b') < 0) return { winner: 'w', why: 'exploded' };
@@ -286,7 +386,7 @@
       san = t + dis + (m.cap ? 'x' : '') + sqName(m.to);
     }
     const n = applyMove(s, m);
-    if (n.variant !== 'antichess') {
+    if (n.variant === 'standard' || n.variant === 'atomic') {
       const st = status(n);
       if (st && st.why === 'checkmate') san += '#';
       else if (inCheck(n.board, n.turn, n.variant)) san += '+';
@@ -305,7 +405,8 @@
 
   const Chess = {
     initialState, fromFEN, legalMoves, applyMove, status, toSAN, toUci, findMove,
-    inCheck, findKing, sqName, parseSq, colorOf, perft, key, opp,
+    inCheck, kingAttacked, findKing, sqName, parseSq, colorOf, perft, key, opp,
+    MOD_IDS, MOD_PLIES, COOLDOWN, CYCLE, chaosMod, activeMod,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Chess;
   else root.Chess = Chess;

@@ -3,19 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChessHub — шахматы онлайн: обычные, Atomic, Antichess</title>
+  <title>ChessHub — шахматы онлайн: обычные, Atomic, Antichess, Хаос</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="theme-brown">
+<body class="ps-classic bd-wood">
+  <!-- градиенты для набора фигур «Золото и обсидиан» -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="gGold" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="0" y2="90">
+        <stop offset="0" stop-color="#fff2b0"/><stop offset=".5" stop-color="#f0b82a"/><stop offset="1" stop-color="#b57a00"/>
+      </linearGradient>
+      <linearGradient id="gObs" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="0" y2="90">
+        <stop offset="0" stop-color="#6a75a8"/><stop offset=".5" stop-color="#2b3150"/><stop offset="1" stop-color="#0d0f1c"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
   <header class="top">
     <div class="brand"><span class="logo">♞</span><b>ChessHub</b></div>
     <div class="spacer"></div>
     <div class="online" id="online" title="Игроков онлайн"></div>
-    <select id="theme" title="Тема доски">
-      <option value="brown">Коричневая</option>
-      <option value="green">Зелёная</option>
-      <option value="blue">Синяя</option>
-    </select>
+    <button id="setBtn" class="ghost" title="Оформление и звук">🎨 Оформление</button>
     <button id="nameBtn" class="ghost" title="Сменить ник"></button>
   </header>
 
@@ -71,7 +79,12 @@
           <div><h3>Обычные</h3><p>Классические шахматы: шах, мат, рокировка, взятие на проходе, ничья по правилу 50 ходов и троекратному повторению.</p></div>
           <div><h3>Atomic</h3><p>Каждое взятие вызывает взрыв. Бьющая фигура, побитая фигура и все непешечные фигуры на соседних клетках исчезают. Пешки взрыв переживают. Король не может брать. Побеждает тот, кто взорвал короля соперника. Если короли стоят рядом, шахов нет.</p></div>
           <div><h3>Antichess</h3><p>Если можно взять, брать обязательно. Король — обычная фигура: шахов и рокировки нет, пешка может превратиться и в короля. Побеждает тот, кто первым потеряет все фигуры или останется без ходов.</p></div>
+          <div>
+            <h3>🎲 Хаос</h3>
+            <p>Шахов нет: короля можно побить или взорвать, и это победа. С первого хода крутится рулетка, и на ближайшие 2 хода (по одному у каждого игрока) выпадает один из 10 модификаторов правил. Потом один ход по обычным правилам (кулдаун) и снова рулетка. Один модификатор два раза подряд не выпадает. Рулетка у обоих игроков показывает один и тот же результат.</p>
+          </div>
         </div>
+        <div id="modList" class="modlist"></div>
       </details>
     </section>
 
@@ -79,6 +92,7 @@
     <section id="game" hidden>
       <div class="gamewrap">
         <div class="boardcol">
+          <div id="modbar" class="modbar" hidden></div>
           <div id="topPlayer" class="player"></div>
           <div id="board" class="board"></div>
           <div id="bottomPlayer" class="player"></div>
@@ -93,10 +107,39 @@
     </section>
   </main>
 
+  <!-- Рулетка модификаторов -->
+  <div id="roulette" class="roulette" hidden>
+    <div class="rl-box">
+      <div class="rl-title">🎲 ХАОС<small>рулетка модификаторов</small></div>
+      <div class="rl-wrap">
+        <div class="rl-view" id="rlView"><div class="rl-strip" id="rlStrip"></div></div>
+        <div class="rl-marker"></div>
+      </div>
+      <div class="rl-result" id="rlResult"></div>
+    </div>
+  </div>
+
+  <!-- Превращение пешки -->
   <div id="promo" class="modal" hidden><div class="modalbox"><div class="label">Превращение пешки</div><div id="promoChoices" class="promochoices"></div></div></div>
+
+  <!-- Настройки оформления -->
+  <div id="settings" class="modal" hidden>
+    <div class="modalbox settings">
+      <div class="sethead"><h2>Оформление</h2><button id="setClose" class="ghost" aria-label="Закрыть">✕</button></div>
+      <div class="label">Фигуры</div>
+      <div id="pieceOpts" class="optgrid"></div>
+      <div class="label">Доска</div>
+      <div id="boardOpts" class="optgrid"></div>
+      <div class="label">Звук</div>
+      <label class="switch"><input type="checkbox" id="soundOn"> Звуки ходов, взрывов и рулетки</label>
+    </div>
+  </div>
+
   <div id="toast" class="toast" hidden></div>
 
   <script src="engine.js"></script>
+  <script src="pieces.js"></script>
+  <script src="sound.js"></script>
   <script src="firebase-config.js"></script>
   <script type="module" src="app.js"></script>
 </body>
