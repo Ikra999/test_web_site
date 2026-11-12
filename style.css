@@ -232,8 +232,8 @@ svg.piece.ghost { position: fixed; z-index: 220; pointer-events: none; transform
 .modbar .cnt { flex: none; font-weight: 700; font-size: 13px; background: #ff9a2e; color: #2b1800; border-radius: 12px; padding: 3px 9px; }
 .modbar.on { border-color: #ff9a2e; background: linear-gradient(90deg, #3a2a18, var(--panel2)); }
 .modbar.cool { border-color: #3d5a6b; }
-.modbar.spin { border-color: #ffd24a; }
-.modbar.spin .mi { animation: spin 1s linear infinite; }
+.modbar.rolling { border-color: #ffd24a; }
+.modbar.rolling .mi { animation: spin 1s linear infinite; }
 .modbar.off { opacity: .7; }
 .modbar.pulse { animation: modpulse .9s ease-out; }
 @keyframes modpulse { 0% { box-shadow: 0 0 0 0 rgba(255,154,46,.9); transform: scale(1.03); } 100% { box-shadow: 0 0 0 18px rgba(255,154,46,0); transform: scale(1); } }
@@ -245,6 +245,8 @@ svg.piece.ghost { position: fixed; z-index: 220; pointer-events: none; transform
 }
 .roulette[hidden] { display: none; }
 .roulette.reveal { background: rgba(8, 8, 12, 0); pointer-events: none; }
+.rl-title { transition: opacity .4s; }
+.roulette.reveal .rl-title { opacity: 0; }
 .rl-box { width: min(94vw, 760px); text-align: center; transition: opacity .35s, transform .35s; }
 .roulette.out .rl-box { opacity: 0; transform: scale(.9); }
 .rl-title { font-size: 26px; font-weight: 900; letter-spacing: .2em; color: #ffd24a; text-shadow: 0 0 18px rgba(255,150,0,.8); margin-bottom: 12px; }

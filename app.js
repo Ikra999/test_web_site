@@ -128,6 +128,7 @@
   function showView(v) {
     $('#lobby').hidden = v !== 'lobby';
     $('#game').hidden = v !== 'game';
+    window.scrollTo(0, 0);
   }
   const plural = n => (n === 1 ? 'ход' : 'хода');
 
@@ -499,7 +500,7 @@
     const ply = cache.moves.length, phase = ply % C.CYCLE;
     if (result()) { bar.className = 'modbar off'; bar.innerHTML = '<span class="mi">🎲</span><div class="mt"><b>Хаос</b><small>Партия окончена</small></div>'; return; }
     if (rl.active && phase === 0) {
-      bar.className = 'modbar spin';
+      bar.className = 'modbar rolling';
       bar.innerHTML = '<span class="mi">🎲</span><div class="mt"><b>Рулетка…</b><small>Выбираем модификатор</small></div>';
       return;
     }
