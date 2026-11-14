@@ -78,7 +78,9 @@ h3 { margin: 0 0 6px; color: var(--hi); font-size: 16px; }
   padding: 10px 18px; background: #1f1d1a; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 10;
 }
-.brand { display: flex; align-items: center; gap: 8px; font-size: 20px; color: var(--hi); }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 20px; color: var(--hi); text-decoration: none; cursor: pointer; border-radius: 8px; padding: 2px 6px; margin-left: -6px; }
+.brand:hover { background: rgba(255,255,255,.06); }
+.brand:focus-visible { outline: 2px solid var(--accent2); }
 .logo { font-size: 30px; line-height: 1; color: var(--accent2); }
 .spacer { flex: 1; }
 .online { font-size: 13px; color: #9a9a9a; }
@@ -273,8 +275,8 @@ svg.piece.ghost { position: fixed; z-index: 220; pointer-events: none; transform
 .mcard.win { transform: scale(1.14); z-index: 3; animation: winglow 1s ease-in-out infinite alternate; border-radius: 12px; background: radial-gradient(circle, rgba(255,210,74,.25), transparent 70%); }
 @keyframes winglow { from { box-shadow: 0 0 14px rgba(255,210,74,.5); } to { box-shadow: 0 0 34px rgba(255,180,0,.95), 0 0 70px rgba(255,120,0,.45); } }
 .mcard.flying { pointer-events: none; transform: none; border: 0; background: transparent; animation: none; z-index: 230; }
-.rl-result { min-height: 64px; margin-top: 16px; opacity: 0; transform: translateY(10px); transition: opacity .35s, transform .35s; }
-.rl-result.show { opacity: 1; transform: none; }
+.rl-result { width: fit-content; max-width: 94vw; margin: 16px auto 0; padding: 12px 24px; border-radius: 14px; border: 1px solid transparent; opacity: 0; transform: translateY(10px); transition: opacity .35s, transform .35s; }
+.rl-result.show { opacity: 1; transform: none; background: rgba(14, 13, 20, .9); border-color: rgba(255, 210, 74, .45); box-shadow: 0 10px 34px rgba(0,0,0,.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 .rl-result b { display: block; font-size: 28px; color: #fff; text-shadow: 0 0 18px rgba(255,170,0,.9); }
 .rl-result span { color: #e5dcc6; font-size: 15px; text-shadow: 0 1px 4px #000; }
 @media (max-width: 520px) { .roulette { --cw: 108px; } .mcard .modicon { width: 72px; height: 72px; } .rl-view { height: 150px; } .rl-title { font-size: 20px; } .rl-result b { font-size: 22px; } }
@@ -307,3 +309,57 @@ svg.piece.ghost { position: fixed; z-index: 220; pointer-events: none; transform
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #111; color: #fff; padding: 10px 18px; border-radius: 8px; border: 1px solid #444; z-index: 300; }
 .toast[hidden] { display: none; }
 [hidden] { display: none !important; }
+
+/* ---------- Баннер «вернуться в партию», своё время ---------- */
+.banner.resume { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: #26331c; border-color: var(--accent); color: #dff0c8; }
+.tcustom { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; color: #9a9a9a; font-size: 14px; }
+.tcustom label { display: inline-flex; align-items: center; gap: 6px; }
+.tcustom input { width: 74px; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--hi); font: inherit; text-align: center; }
+.tcustom input:focus { outline: 2px solid var(--accent2); outline-offset: 0; }
+
+/* ---------- Ходы: можно нажимать, чтобы посмотреть позицию ---------- */
+.moves .mv[data-ply] { cursor: pointer; }
+.moves .mv[data-ply]:hover { background: #4a4742; }
+.moves .mv.cur { background: var(--accent); }
+.moves .mv.view { background: #2f6fb5; outline: 1px solid #8fc2ff; }
+.moves.four { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
+.moves.four .mv { display: inline-flex; align-items: center; gap: 5px; background: #3a3835; }
+.moves.four .mv.out { background: #4a2a2a; }
+.histnav { display: flex; gap: 6px; }
+.histnav button { flex: 1 1 0; padding: 7px 4px; }
+.histnav button.live { flex: 3 1 0; }
+.sq.last::before { z-index: 1; }
+
+/* ---------- Четыре игрока ---------- */
+.pdot.cr { background: #e5483e; } .pdot.cb { background: #3f86ea; } .pdot.cy { background: #f5cf3d; } .pdot.cg { background: #37b56a; }
+.pdot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.5); flex: none; }
+.players4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.p4 { display: flex; flex-direction: column; gap: 4px; padding: 7px 8px; border-radius: 8px; background: var(--panel2); border: 2px solid transparent; min-width: 0; color: var(--hi); font-weight: 600; font-size: 13px; }
+.p4 .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.p4 .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p4 .clock { font-size: 16px; padding: 5px 6px; min-width: 0; }
+.p4.turn { border-color: #e9e6df; }
+.p4.out { opacity: .45; } .p4.out .pname { text-decoration: line-through; }
+#game.four { --bs: min(94vw, max(300px, calc(100vh - 150px)), 720px); }
+#game.four .side { height: auto; max-height: calc(var(--bs) + 60px); }
+#game.four .moves { max-height: 260px; }
+.board.b4 { grid-template-columns: repeat(14, 1fr); grid-template-rows: repeat(14, 1fr); border-radius: 0; overflow: visible; box-shadow: none; outline: none; filter: drop-shadow(0 8px 20px rgba(0,0,0,.55)); }
+.board.b4 .sq.void { visibility: hidden; pointer-events: none; }
+.board.b4 .sq svg.piece { width: 92%; height: 92%; }
+.piece.p4r, .piece.p4b, .piece.p4y, .piece.p4g, .piece.p4x { filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.45)); }
+.piece.p4r { --pf: #e5483e; } .piece.p4b { --pf: #3f86ea; } .piece.p4y { --pf: #f5cf3d; } .piece.p4g { --pf: #37b56a; } .piece.p4x { --pf: #8d8d8d; opacity: .7; }
+.piece.p4r .o, .piece.p4b .o, .piece.p4y .o, .piece.p4g .o, .piece.p4x .o { fill: #161616; stroke: #161616; }
+.piece.p4r .f, .piece.p4b .f, .piece.p4y .f, .piece.p4g .f, .piece.p4x .f { fill: var(--pf); }
+.piece.p4r .d, .piece.p4b .d, .piece.p4y .d, .piece.p4g .d, .piece.p4x .d { stroke: rgba(0,0,0,.6); }
+.piece.p4r .e, .piece.p4b .e, .piece.p4y .e, .piece.p4g .e, .piece.p4x .e { fill: #161616; }
+@media (max-width: 560px) { .p4 { font-size: 11px; padding: 5px; } .p4 .clock { font-size: 13px; } }
+
+/* ---------- Комната ожидания ---------- */
+.roomcard { max-width: 520px; margin: 30px auto; text-align: center; }
+.roomload { display: flex; justify-content: center; margin-bottom: 12px; }
+.spin.big { width: 44px; height: 44px; border-width: 4px; }
+.roommsg { color: var(--accent2); font-weight: 600; font-size: 17px; margin: 0 0 14px; }
+.slots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 0 0 14px; }
+.slot { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; min-height: 48px; border-radius: 8px; background: var(--panel2); border: 2px dashed var(--line); color: #7a7a7a; }
+.slot.on { border-style: solid; border-color: var(--accent); color: var(--hi); font-weight: 600; }
+.slot .spin { width: 14px; height: 14px; }

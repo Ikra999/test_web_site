@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChessHub — шахматы онлайн: обычные, Atomic, Antichess, Хаос</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#1f1d1a">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body class="ps-classic bd-wood">
   <!-- градиенты для набора фигур «Золото и обсидиан» -->
@@ -20,7 +25,7 @@
   </svg>
 
   <header class="top">
-    <div class="brand"><span class="logo">♞</span><b>ChessHub</b></div>
+    <a class="brand" id="homeLink" href="./" title="На главную"><span class="logo">♞</span><b>ChessHub</b></a>
     <div class="spacer"></div>
     <div class="online" id="online" title="Игроков онлайн"></div>
     <button id="setBtn" class="ghost" title="Оформление и звук">🎨 Оформление</button>
@@ -36,6 +41,11 @@
         <code>firebase-config.js</code>. Пока можно играть вдвоём за одним экраном (кнопка «Играть вдвоём на этом устройстве»).
       </div>
 
+      <div id="resumeBar" class="banner resume" hidden>
+        <span>У вас есть незавершённая онлайн-партия.</span>
+        <button id="resumeBtn" class="primary">Вернуться в партию</button>
+      </div>
+
       <div class="grid">
         <div class="card">
           <h2>Новая партия</h2>
@@ -45,12 +55,20 @@
 
           <div class="label">Контроль времени (минуты + секунды за ход)</div>
           <div id="presets" class="chips"></div>
+          <div class="tcustom">
+            <span>Своё время:</span>
+            <label><input id="tcMin" type="number" min="1" max="180" step="1" inputmode="numeric"> мин</label>
+            <span>+</span>
+            <label><input id="tcInc" type="number" min="0" max="120" step="1" inputmode="numeric"> сек</label>
+          </div>
 
-          <div class="label">Цвет</div>
-          <div id="colorSel" class="seg">
-            <button data-c="random" class="on">Случайный</button>
-            <button data-c="w">Белые</button>
-            <button data-c="b">Чёрные</button>
+          <div id="colorWrap">
+            <div class="label">Цвет</div>
+            <div id="colorSel" class="seg">
+              <button data-c="random" class="on">Случайный</button>
+              <button data-c="w">Белые</button>
+              <button data-c="b">Чёрные</button>
+            </div>
           </div>
 
           <div class="actions">
@@ -81,7 +99,13 @@
           <div><h3>Antichess</h3><p>Если можно взять, брать обязательно. Король — обычная фигура: шахов и рокировки нет, пешка может превратиться и в короля. Побеждает тот, кто первым потеряет все фигуры или останется без ходов.</p></div>
           <div>
             <h3>🎲 Хаос</h3>
-            <p>Шахов нет: короля можно побить или взорвать, и это победа. С первого хода крутится рулетка, и на ближайшие 2 хода (по одному у каждого игрока) выпадает один из 10 модификаторов правил. Потом один ход по обычным правилам (кулдаун) и снова рулетка. Один модификатор два раза подряд не выпадает. Рулетка у обоих игроков показывает один и тот же результат.</p>
+            <p>Шахов нет: короля можно побить или взорвать, и это победа. С первого хода крутится рулетка, и на ближайшие 2 хода (по одному у каждого игрока) выпадает один из <b id="modCount">17</b> модификаторов правил. Потом один ход по обычным правилам (кулдаун) и снова рулетка. Один модификатор два раза подряд не выпадает. Рулетка у обоих игроков показывает один и тот же результат.</p>
+          </div>
+        </div>
+        <div class="rulegrid" style="margin-top:18px">
+          <div>
+            <h3>👥 4 игрока</h3>
+            <p>Четыре команды на крестообразной доске 14×14, ходят по часовой стрелке: красные, синие, жёлтые, зелёные. Шахов нет: короля можно побить. Побитый король выбывает, а его фигуры становятся серыми и остаются на доске как препятствия (их можно бить). Игрок без ходов, сдавшийся или просрочивший время тоже выбывает. Побеждает последний оставшийся. Пешки превращаются на 11-й линии; рокировки и взятия на проходе нет. Игра только онлайн: комната ждёт всех четверых, из ожидания можно выйти.</p>
           </div>
         </div>
         <div id="modList" class="modlist"></div>
@@ -93,16 +117,33 @@
       <div class="gamewrap">
         <div class="boardcol">
           <div id="modbar" class="modbar" hidden></div>
+          <div id="players4" class="players4" hidden></div>
           <div id="topPlayer" class="player"></div>
           <div id="board" class="board"></div>
+          <div id="board4" class="board b4" hidden></div>
           <div id="bottomPlayer" class="player"></div>
         </div>
         <aside class="side card">
           <div id="gameInfo" class="gameinfo"></div>
           <div id="status" class="status"></div>
           <div id="moves" class="moves"></div>
+          <div id="histnav" class="histnav"></div>
           <div id="controls" class="ctrls"></div>
         </aside>
+      </div>
+    </section>
+
+    <!-- КОМНАТА ОЖИДАНИЯ (4 игрока) -->
+    <section id="room" hidden>
+      <div class="card roomcard">
+        <div class="roomload"><span class="spin big"></span></div>
+        <h2>👥 Партия на четверых</h2>
+        <p id="roomMsg" class="roommsg"></p>
+        <div id="roomSlots" class="slots"></div>
+        <div id="roomTC" class="muted"></div>
+        <div class="actions" style="justify-content:center">
+          <button id="roomLeave" class="danger">Выйти из ожидания</button>
+        </div>
       </div>
     </section>
   </main>
@@ -137,10 +178,11 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="engine.js"></script>
-  <script src="pieces.js"></script>
-  <script src="sound.js"></script>
+  <script src="engine.js?v=3"></script>
+  <script src="engine4.js?v=3"></script>
+  <script src="pieces.js?v=3"></script>
+  <script src="sound.js?v=3"></script>
   <script src="firebase-config.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=3"></script>
 </body>
 </html>

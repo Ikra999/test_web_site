@@ -1,7 +1,7 @@
 /* ChessHub: лобби, вызовы, партия, часы, оформление, режим «Хаос». Онлайн через Firebase Realtime Database. */
 (() => {
   'use strict';
-  const C = window.Chess, Art = window.Art, Snd = window.Snd;
+  const C = window.Chess, C4 = window.Chess4, Art = window.Art, Snd = window.Snd;
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -15,8 +15,12 @@
     standard: { name: 'Обычные', icon: '♞', desc: 'Классические шахматы' },
     atomic: { name: 'Atomic', icon: '💥', desc: 'Взятие взрывает фигуры вокруг. Взорви короля!' },
     antichess: { name: 'Antichess', icon: '🎯', desc: 'Бить обязательно. Потеряй все фигуры, чтобы победить' },
-    chaos: { name: 'Хаос', icon: '🎲', desc: 'Рулетка случайных правил: 10 модификаторов, шахов нет' },
+    chaos: { name: 'Хаос', icon: '🎲', desc: 'Рулетка случайных правил: ' + C.MOD_IDS.length + ' модификаторов, шахов нет' },
+    four: { name: '4 игрока', icon: '👥', desc: 'Четыре команды на крестообразной доске. Только онлайн, последний король побеждает' },
   };
+  const CN = { r: 'Красные', b: 'Синие', y: 'Жёлтые', g: 'Зелёные' };          // кто победил / кто выбыл
+  const CNI = { r: 'красными', b: 'синими', y: 'жёлтыми', g: 'зелёными' };     // «вы играете …»
+  const CNG = { r: 'красных', b: 'синих', y: 'жёлтых', g: 'зелёных' };         // «ход …»
   const MODS = {
     atomic: { name: 'Атомный взрыв', desc: 'Каждое взятие взрывает соседние фигуры (пешки выживают)' },
     antichess: { name: 'Принудиловка', desc: 'Если можно бить, бить обязательно' },
@@ -28,7 +32,15 @@
     peace: { name: 'Мирное время', desc: 'Бить нельзя, пока есть другие ходы' },
     sprint: { name: 'Спринт пешек', desc: 'Пешки могут шагнуть на 2 клетки с любого места' },
     kingqueen: { name: 'Король-ферзь', desc: 'Король ходит как ферзь' },
+    heavy: { name: 'Армия ферзей', desc: 'Кони, слоны и ладьи ходят как ферзи' },
+    frozenknight: { name: 'Кони в оковах', desc: 'Кони не могут ходить' },
+    kamikaze: { name: 'Камикадзе', desc: 'Бьющая фигура гибнет вместе с побитой (король тоже!)' },
+    retreat: { name: 'Отступление', desc: 'Вперёд ходить нельзя, только назад или вбок' },
+    kbswap: { name: 'Кони ↔ слоны', desc: 'Кони ходят как слоны, а слоны как кони' },
+    queenking: { name: 'Ферзь-малютка', desc: 'Ферзь ходит как король' },
+    pawnrook: { name: 'Пешки-ладьи', desc: 'Пешки ходят и бьют как ладьи' },
   };
+  const boomMod = m => m === 'atomic' || m === 'kamikaze';
   const PIECE_SETS = [['classic', 'Классика'], ['neon', 'Неон'], ['gold', 'Золото и обсидиан']];
   const BOARDS = [['wood', 'Дерево'], ['emerald', 'Изумруд'], ['night', 'Ночь']];
   const PRESETS = [[1, 0], [2, 1], [3, 0], [3, 2], [5, 0], [5, 3], [10, 0], [15, 10], [30, 0]];
@@ -36,7 +48,7 @@
     checkmate: 'мат', stalemate: 'пат', resign: 'сдача', time: 'время вышло', agreed: 'ничья по соглашению',
     exploded: 'король взорван', kingdown: 'король уничтожен', nopieces: 'потеряны все фигуры',
     nomoves: 'нет ходов (пат — победа)', insufficient: 'недостаточно материала', fifty: 'правило 50 ходов',
-    repetition: 'троекратное повторение', aborted: 'партия отменена',
+    repetition: 'троекратное повторение', aborted: 'партия отменена', last: 'остальные выбыли',
   };
   const SPIN_MS = 2600, HOLD_MS = 1300, FLY_MS = 650;
 
@@ -96,7 +108,10 @@
 
   // ---------- Состояние ----------
   let online = false;
-  let vSel = 'standard', pSel = 4, cSel = 'random';
+  let vSel = 'standard', tcSel = { t: 5, inc: 0 }, cSel = 'random';
+  let rooms = {}, roomId = null, starting = null;   // комнаты на 4 игрока
+  let viewPly = null;                                // null = текущая позиция, иначе номер хода, который смотрим
+  let finishing4 = -1, rematchBusy = false;
   let seeks = {};
   let G = null;                // текущая партия
   let unsubGame = null;
@@ -128,11 +143,20 @@
   function showView(v) {
     $('#lobby').hidden = v !== 'lobby';
     $('#game').hidden = v !== 'game';
+    $('#room').hidden = v !== 'room';
     window.scrollTo(0, 0);
   }
   const plural = n => (n === 1 ? 'ход' : 'хода');
 
   // ---------- Лобби ----------
+  const clampInt = (v, lo, hi, d) => { v = parseInt(v, 10); return isNaN(v) ? d : Math.min(hi, Math.max(lo, v)); };
+
+  function syncTC(writeInputs) {
+    document.querySelectorAll('#presets .chip').forEach(b =>
+      b.classList.toggle('on', +b.dataset.t === tcSel.t && +b.dataset.inc === tcSel.inc));
+    if (writeInputs) { $('#tcMin').value = tcSel.t; $('#tcInc').value = tcSel.inc; }
+  }
+
   function buildLobbyControls() {
     const vc = $('#variantCards');
     vc.innerHTML = '';
@@ -146,17 +170,23 @@
     }
     const pr = $('#presets');
     pr.innerHTML = '';
-    PRESETS.forEach(([t, inc], i) => {
+    PRESETS.forEach(([t, inc]) => {
       const b = document.createElement('button');
-      b.className = 'chip' + (i === pSel ? ' on' : '');
+      b.className = 'chip';
       b.textContent = `${t}+${inc}`;
-      b.onclick = () => { pSel = i; buildLobbyControls(); };
+      b.dataset.t = t; b.dataset.inc = inc;
+      b.onclick = () => { tcSel = { t, inc }; syncTC(true); };
       pr.appendChild(b);
     });
+    syncTC(true);
     document.querySelectorAll('#colorSel button').forEach(b => {
       b.classList.toggle('on', b.dataset.c === cSel);
       b.onclick = () => { cSel = b.dataset.c; buildLobbyControls(); };
     });
+    const four = vSel === 'four';
+    $('#colorWrap').hidden = four;
+    $('#localBtn').hidden = four;
+    $('#createBtn').textContent = four ? 'Создать комнату' : 'Создать вызов';
   }
 
   function buildModList() {
@@ -171,22 +201,36 @@
     $('#cancelBtn').hidden = !waiting;
     $('#createBtn').hidden = waiting;
     $('#createBtn').disabled = !online;
+    $('#resumeBar').hidden = !(online && !G && !roomId && store.get('chess_game'));
+
+    const fresh = c => !c || now() - c < 30 * 60 * 1000;
+    const list = [];
+    for (const [id, s] of Object.entries(seeks)) if (s && !s.game && fresh(s.created)) list.push({ kind: 'seek', id, s, created: s.created || 0 });
+    for (const [id, r] of Object.entries(rooms)) {
+      const n = roomPlayers(r).length;
+      if (r && !r.game && n > 0 && n < 4 && fresh(r.created)) list.push({ kind: 'room', id, r, n, created: r.created || 0 });
+    }
+    list.sort((a, b) => b.created - a.created);
 
     const tb = $('#seekTable tbody');
     tb.innerHTML = '';
-    const list = Object.entries(seeks)
-      .filter(([, s]) => s && !s.game && (!s.created || now() - s.created < 30 * 60 * 1000))
-      .sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
-    for (const [id, s] of list) {
-      const isMine = s.uid === me.uid;
-      const dot = s.color === 'w' ? 'w' : s.color === 'b' ? 'b' : 'r';
+    for (const it of list) {
       const tr = document.createElement('tr');
-      if (isMine) tr.className = 'mine';
-      tr.innerHTML = `<td>${esc(s.name)}</td><td>${esc(VARIANTS[s.variant] ? VARIANTS[s.variant].name : s.variant)}</td>` +
-        `<td>${s.t}+${s.inc}</td><td><span class="dot ${dot}"></span></td><td></td>`;
       const btn = document.createElement('button');
-      if (isMine) { btn.textContent = 'Ваш вызов'; btn.disabled = true; }
-      else { btn.textContent = 'Играть'; btn.className = 'primary'; btn.onclick = () => acceptSeek(id); }
+      if (it.kind === 'seek') {
+        const { s, id } = it, isMine = s.uid === me.uid;
+        const dot = s.color === 'w' ? 'w' : s.color === 'b' ? 'b' : 'r';
+        if (isMine) tr.className = 'mine';
+        tr.innerHTML = `<td>${esc(s.name)}</td><td>${esc(VARIANTS[s.variant] ? VARIANTS[s.variant].name : s.variant)}</td>` +
+          `<td>${s.t}+${s.inc}</td><td><span class="dot ${dot}"></span></td><td></td>`;
+        if (isMine) { btn.textContent = 'Ваш вызов'; btn.disabled = true; }
+        else { btn.textContent = 'Играть'; btn.className = 'primary'; btn.onclick = () => acceptSeek(id); }
+      } else {
+        const host = roomPlayers(it.r)[0][1].name;
+        tr.innerHTML = `<td>${esc(host)}</td><td>👥 4 игрока</td><td>${tcLabel(it.r.tc)}</td><td>${it.n}/4</td><td></td>`;
+        btn.textContent = 'Войти'; btn.className = 'primary';
+        btn.onclick = () => joinRoom(it.id).catch(e => { console.error(e); toast('Не удалось войти в комнату'); });
+      }
       tr.lastChild.appendChild(btn);
       tb.appendChild(tr);
     }
@@ -194,9 +238,110 @@
     $('#seekTable').hidden = list.length === 0;
   }
 
+  // ---------- Комнаты на 4 игрока ----------
+  const roomPlayers = r => Object.entries((r && r.players) || {}).sort((a, b) => (a[1].t || 0) - (b[1].t || 0));
+
+  async function createRoom() {
+    if (!online || roomId) return;
+    const { t, inc } = tcSel;
+    const id = fb.push(R('rooms4')).key;
+    roomId = id;
+    showView('room');
+    await fb.set(R('rooms4/' + id), { tc: { t, inc }, created: fb.serverTimestamp(), players: { [me.uid]: { name: me.name, t: Date.now() } } });
+    fb.onDisconnect(R('rooms4/' + id + '/players/' + me.uid)).remove();
+    renderRoom();
+  }
+
+  async function joinRoom(id) {
+    if (!online || roomId) return;
+    const res = await fb.runTransaction(R('rooms4/' + id), cur => {
+      if (!cur || cur.game) return undefined;
+      const ps = cur.players || {};
+      if (!ps[me.uid] && Object.keys(ps).length >= 4) return undefined;
+      ps[me.uid] = { name: me.name, t: Date.now() };
+      cur.players = ps;
+      return cur;
+    });
+    if (!res.committed) { toast('Комната уже заполнена или закрыта'); return; }
+    roomId = id;
+    fb.onDisconnect(R('rooms4/' + id + '/players/' + me.uid)).remove();
+    showView('room');
+    renderRoom();
+  }
+
+  async function leaveRoom() {
+    const id = roomId;
+    if (!id) return;
+    roomId = null; starting = null;
+    showView('lobby'); renderLobby();
+    try {
+      fb.onDisconnect(R('rooms4/' + id + '/players/' + me.uid)).cancel();
+      await fb.runTransaction(R('rooms4/' + id), cur => {
+        if (!cur || cur.game) return undefined;
+        const ps = cur.players || {};
+        delete ps[me.uid];
+        if (!Object.keys(ps).length) return null;        // ушёл последний: комната удаляется
+        cur.players = ps;
+        return cur;
+      });
+    } catch (e) { console.error(e); }
+  }
+
+  function renderRoom() {
+    const r = rooms[roomId];
+    if (!r) return;
+    const ps = roomPlayers(r), n = ps.length;
+    $('#roomMsg').textContent = n >= 4 ? 'Все в сборе! Начинаем партию…' : `Ждём игроков… ${n}/4`;
+    $('#roomTC').textContent = 'Время: ' + tcLabel(r.tc);
+    $('#roomLeave').disabled = n >= 4;
+    let html = '';
+    for (let i = 0; i < 4; i++) {
+      html += ps[i]
+        ? `<div class="slot on">👤 ${esc(ps[i][1].name)}${ps[i][0] === me.uid ? ' (вы)' : ''}</div>`
+        : '<div class="slot"><span class="spin"></span> Свободно</div>';
+    }
+    $('#roomSlots').innerHTML = html;
+  }
+
+  function onRooms() {
+    if (roomId) {
+      const r = rooms[roomId];
+      if (r && r.game) {
+        const gid = r.game, rid0 = roomId;
+        fb.onDisconnect(R('rooms4/' + rid0 + '/players/' + me.uid)).cancel();
+        roomId = null; starting = null;
+        openGame(gid);
+        return;
+      }
+      if (!r || !(r.players && r.players[me.uid])) {
+        roomId = null; starting = null;
+        showView('lobby'); toast('Комната закрыта');
+      } else {
+        renderRoom();
+        if (roomPlayers(r).length >= 4) startRoom(roomId, r).catch(e => { console.error(e); starting = null; });
+      }
+    }
+    if (!G && !roomId) renderLobby();
+  }
+
+  // Когда в комнате четверо, один из клиентов (его выбирает транзакция) создаёт партию.
+  async function startRoom(id, r) {
+    if (starting === id) return;
+    starting = id;
+    const gid = fb.push(R('games')).key;
+    const res = await fb.runTransaction(R('rooms4/' + id + '/game'), cur => (cur === null ? gid : undefined));
+    if (!res.committed) return;
+    const ps = roomPlayers(r).slice(0, 4).map(([uid, p]) => ({ uid, name: p.name }));
+    for (let i = ps.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ps[i], ps[j]] = [ps[j], ps[i]]; }
+    const players = {};
+    C4.ORDER.forEach((c, i) => { players[c] = ps[i]; });
+    await fb.set(R('games/' + gid), { variant: 'four', tc: r.tc, players, startT: fb.serverTimestamp() });
+    setTimeout(() => fb.remove(R('rooms4/' + id)).catch(() => {}), 20000);
+  }
+
   async function createSeek() {
     if (!online) return;
-    const [t, inc] = PRESETS[pSel];
+    const { t, inc } = tcSel;
     const r = R('seeks/' + me.uid);
     await fb.set(r, { uid: me.uid, name: me.name, variant: vSel, t, inc, color: cSel, created: fb.serverTimestamp() });
     fb.onDisconnect(r).remove();
@@ -234,20 +379,21 @@
 
   function resetGameRuntime() {
     cancelRoulette();
-    finishing = false;
+    finishing = false; finishing4 = -1; rematchBusy = false;
     snd = { n: null, ended: false };
     rl.spunFor = -1;
-    flipManual = false; sel = null; targets = new Map(); cache = null;
+    flipManual = false; sel = null; targets = new Map(); cache = null; viewPly = null;
   }
 
-  function startLocal() {
+  function startLocal(variant) {
+    const v = typeof variant === 'string' ? variant : vSel;
     leaveGame(true);
     resetGameRuntime();
     G = {
-      local: true, id: 'local-' + rid(), variant: vSel, tc: null,
+      local: true, id: 'local-' + rid(), variant: v, tc: null,
       seed: Math.floor(Math.random() * 2147483647),
       white: { name: 'Белые' }, black: { name: 'Чёрные' },
-      moves: [], result: null, my: null, drawOffer: null,
+      moves: [], result: null, drawOffer: null,
     };
     showView('game');
     refresh();
@@ -260,11 +406,20 @@
       mv = Array.isArray(v.moves) ? v.moves : Object.keys(v.moves).sort((a, b) => a - b).map(k => v.moves[k]);
       mv = mv.filter(Boolean);
     }
-    return {
-      id, variant: v.variant, tc: v.tc, white: v.white, black: v.black, startT: v.startT, seed: v.seed | 0,
+    const g = {
+      id, variant: v.variant, tc: v.tc, startT: v.startT, seed: v.seed | 0,
       moves: mv, result: v.result || null, drawOffer: v.drawOffer || null,
-      my: v.white.uid === me.uid ? 'w' : v.black.uid === me.uid ? 'b' : null,
+      rematch: v.rematch || {}, rematchGame: v.rematchGame || null,
     };
+    if (v.variant === 'four') {
+      g.four = true;
+      g.players = v.players || {};
+      g.my = C4.ORDER.find(c => g.players[c] && g.players[c].uid === me.uid) || null;
+    } else {
+      g.white = v.white; g.black = v.black;
+      g.my = v.white.uid === me.uid ? 'w' : v.black.uid === me.uid ? 'b' : null;
+    }
+    return g;
   }
 
   function openGame(id, resume) {
@@ -296,17 +451,29 @@
     });
   }
 
-  function leaveGame(silent) {
+  // keep = true: выходим в лобби, но онлайн-партию помним (кнопка «Вернуться в партию»)
+  function leaveGame(silent, keep) {
     if (unsubGame) { unsubGame(); unsubGame = null; }
-    if (G && !G.local) store.del('chess_game');
+    if (G && !G.local && !(keep && !G.loading && !result())) store.del('chess_game');
     cancelRoulette();
-    G = null; cache = null; sel = null; targets = new Map();
-    $('#game').classList.remove('chaos');
+    G = null; cache = null; sel = null; targets = new Map(); viewPly = null;
+    $('#game').classList.remove('chaos', 'four');
     if (!silent) { showView('lobby'); renderLobby(); }
   }
 
+  function goHome() {
+    if (roomId) { leaveRoom(); return; }
+    if (!G) { showView('lobby'); renderLobby(); return; }
+    const running = !G.loading && !result() && (G.local || G.my);
+    if (running && !confirm(G.local
+      ? 'Выйти в лобби? Текущая партия будет потеряна.'
+      : 'Выйти в лобби? Партия не закончится, вернуться в неё можно кнопкой «Вернуться в партию».')) return;
+    leaveGame(false, !G.local);
+  }
+
   function derive() {
-    if (!cache || cache.id !== G.id || G.moves.length < cache.moves.length) {
+    if (G.four) return derive4();
+    if (!cache || cache.id !== G.id || cache.four || G.moves.length < cache.moves.length) {
       const s0 = C.initialState(G.variant, G.seed);
       cache = { id: G.id, states: [s0], keys: [C.key(s0)], sans: [], moves: [], evalN: -1, legal: [], pos: null };
     }
@@ -327,9 +494,46 @@
     }
   }
 
+  // Партия на четверых: записи в moves — это ходы {m} или выбывания {e:'out', c, why}.
+  function derive4() {
+    if (!cache || cache.id !== G.id || !cache.four || G.moves.length < cache.moves.length) {
+      const s0 = C4.initialState();
+      cache = { id: G.id, four: true, states: [s0], keys: [], sans: [], moves: [], times: [], movers: [],
+        starts: [G.startT > 0 ? G.startT : now()], evalN: -1, legal: [], pos: null };
+    }
+    while (cache.moves.length < G.moves.length) {
+      const k = cache.moves.length, s = cache.states[k], e = G.moves[k];
+      let n, mv, san;
+      if (e.e === 'out') {
+        n = C4.eliminate(s, e.c);
+        mv = { ev: true, c: e.c };
+        san = s.alive[e.c] ? `${CN[e.c]} ${e.why === 'time' ? 'вылетели по времени' : 'сдались'}` : '';
+      } else {
+        const legal = C4.legalMoves(s);
+        const m = C4.findMove(s, e.m || '', legal);
+        if (!m) break;
+        san = C4.toSAN(s, m); n = C4.applyMove(s, m); mv = m;
+      }
+      const t = e.t > 0 ? e.t : cache.starts[k];
+      cache.sans.push(san); cache.states.push(n); cache.moves.push(mv);
+      cache.times.push(t); cache.movers.push(s.turn);
+      cache.starts.push(n.turn !== s.turn ? t : cache.starts[k]);   // с какого момента думает тот, чей сейчас ход
+    }
+    if (cache.evalN !== cache.states.length) {
+      const cur = cache.states[cache.states.length - 1];
+      cache.legal = C4.legalMoves(cur);
+      cache.pos = C4.status(cur);
+      cache.evalN = cache.states.length;
+    }
+  }
+
   const curState = () => cache.states[cache.states.length - 1];
   const result = () => (G.result || (cache && cache.pos) || null);
   const isFlipped = () => (G.my === 'b') !== flipManual;
+  const shownN = () => (viewPly === null ? cache.moves.length : Math.min(viewPly, cache.moves.length));
+  const viewing = () => !!cache && viewPly !== null && viewPly < cache.moves.length;
+  const ownerOf = p => (G && G.four ? p[0] : C.colorOf(p));
+  const view4Rot = () => ((G.my ? C4.ORDER.indexOf(G.my) : 0) + (flipManual ? 2 : 0)) % 4;
   const locked = () => Date.now() < rl.lockUntil;
 
   // Время хода в Хаосе не включает рулетку: на ходу, с которого начинается цикл, возвращаем SPIN_MS.
@@ -351,11 +555,83 @@
     await fb.runTransaction(R('games/' + G.id + '/result'), cur => (cur === null ? res : undefined));
   }
 
+  // Время игроков в партии на четверых: у каждого свой запас, прибавка после своего хода.
+  function remaining4(color, t) {
+    if (!G.tc || !G.tc.t) return Infinity;
+    let rem = G.tc.t * 60000;
+    const ms = cache.moves;
+    for (let k = 0; k < ms.length; k++) {
+      if (ms[k].ev || cache.movers[k] !== color) continue;
+      rem += G.tc.inc * 1000 - Math.max(0, cache.times[k] - cache.starts[k]);
+    }
+    const cur = curState();
+    if (!result() && cur.alive[color] && cur.turn === color) rem -= Math.max(0, t - cache.starts[cache.starts.length - 1]);
+    return rem;
+  }
+
+  // Запись хода/выбывания на четверых. Транзакция по индексу не даёт двум записям затереть друг друга.
+  async function pushEntry(entry, retries, stillNeeded) {
+    const gid = G.id;
+    for (let a = 0; a <= (retries || 0); a++) {
+      const n = G.moves.length;
+      const res = await fb.runTransaction(R('games/' + gid + '/moves/' + n), cur => (cur === null ? entry : undefined));
+      if (res.committed) return true;
+      await new Promise(r => setTimeout(r, 350));
+      if (!G || G.id !== gid || (stillNeeded && !stillNeeded())) return false;
+    }
+    return false;
+  }
+  const out4 = (c, why, retries, needed) => pushEntry({ e: 'out', c, why, t: now() }, retries, needed);
+
   async function submitMove(m) {
+    if (G.local) { G.moves.push({ m: C.toUci(m), t: Date.now() }); refresh(); return; }
+    if (G.four) { await pushEntry({ m: C4.toUci(m), t: now() }, 0); return; }
     const uci = C.toUci(m);
-    if (G.local) { G.moves.push({ m: uci, t: Date.now() }); refresh(); return; }
     const n = G.moves.length;
     await fb.update(R('games/' + G.id), { ['moves/' + n]: { m: uci, t: fb.serverTimestamp() }, drawOffer: null });
+  }
+
+  // ---------- Реванш ----------
+  const rematchNeed = () => (G.four ? C4.ORDER.map(c => G.players[c] && G.players[c].uid) : [G.white.uid, G.black.uid]);
+
+  function rematchButton() {
+    if (G.local) return '<button id="bRematch" class="primary">🔁 Сыграть снова</button>';
+    if (!G.my) return '';
+    const need = rematchNeed(), got = need.filter(u => G.rematch && G.rematch[u]).length;
+    if (G.rematch && G.rematch[me.uid]) {
+      return `<button disabled>⏳ Ждём ${G.four ? `остальных (${got}/${need.length})` : 'соперника'}…</button>`;
+    }
+    if (got > 0) return `<button id="bRematch" class="primary">🔁 Принять реванш${G.four ? ` (${got}/${need.length})` : ''}</button>`;
+    return '<button id="bRematch" class="primary">🔁 Сыграть снова</button>';
+  }
+
+  function doRematch() {
+    if (G.local) { startLocal(G.variant); return; }
+    fb.set(R('games/' + G.id + '/rematch/' + me.uid), true).catch(() => toast('Не удалось отправить предложение'));
+  }
+
+  // Все участники согласны: один из клиентов (выбирает транзакция) создаёт новую партию с переставленными цветами.
+  function maybeRematch() {
+    if (G.local || !G.my || !result() || G.rematchGame || rematchBusy) return;
+    if (!rematchNeed().every(u => u && G.rematch[u])) return;
+    rematchBusy = true;
+    const g = G;
+    createRematch(g).catch(e => { console.error(e); rematchBusy = false; });
+  }
+
+  async function createRematch(g) {
+    const gid = fb.push(R('games')).key;
+    const res = await fb.runTransaction(R('games/' + g.id + '/rematchGame'), cur => (cur === null ? gid : undefined));
+    if (!res.committed) return;
+    let rec;
+    if (g.four) {
+      const players = {};
+      C4.ORDER.forEach((c, i) => { players[C4.ORDER[(i + 1) % 4]] = g.players[c]; });   // каждый играет следующим цветом
+      rec = { variant: 'four', tc: g.tc, players, startT: fb.serverTimestamp() };
+    } else {
+      rec = { variant: g.variant, tc: g.tc, white: g.black, black: g.white, seed: Math.floor(Math.random() * 2147483647), startT: fb.serverTimestamp() };
+    }
+    await fb.set(R('games/' + gid), rec);
   }
 
   // ---------- Звуки партии ----------
@@ -363,11 +639,16 @@
     const n = cache.moves.length, res = result();
     if (snd.n === null) { snd.n = n; snd.ended = !!res; return; }
     if (n > snd.n) {
-      const m = cache.moves[n - 1], prevS = cache.states[n - 1], cur = curState();
-      const boom = m.cap && (G.variant === 'atomic' || C.activeMod(prevS) === 'atomic');
-      if (boom) Snd.boom(); else if (m.cap) Snd.capture(); else Snd.move();
-      const chk = G.variant === 'chaos' ? C.kingAttacked(cur) : (G.variant !== 'antichess' && C.inCheck(cur.board, cur.turn, G.variant));
-      if (chk && !res) setTimeout(() => Snd.check(), 150);
+      const m = cache.moves[n - 1];
+      if (G.four) {
+        if (m && !m.ev) { if (m.cap) Snd.capture(); else Snd.move(); } else Snd.tick();
+      } else {
+        const prevS = cache.states[n - 1], cur = curState();
+        const boom = m.cap && (G.variant === 'atomic' || boomMod(C.activeMod(prevS)));
+        if (boom) Snd.boom(); else if (m.cap) Snd.capture(); else Snd.move();
+        const chk = G.variant === 'chaos' ? C.kingAttacked(cur) : (G.variant !== 'antichess' && C.inCheck(cur.board, cur.turn, G.variant));
+        if (chk && !res) setTimeout(() => Snd.check(), 150);
+      }
     }
     snd.n = n;
     if (res && !snd.ended) {
@@ -497,14 +778,14 @@
     const bar = $('#modbar');
     if (!G || G.loading || G.variant !== 'chaos' || !cache) { bar.hidden = true; return; }
     bar.hidden = false;
-    const ply = cache.moves.length, phase = ply % C.CYCLE;
-    if (result()) { bar.className = 'modbar off'; bar.innerHTML = '<span class="mi">🎲</span><div class="mt"><b>Хаос</b><small>Партия окончена</small></div>'; return; }
-    if (rl.active && phase === 0) {
+    const n = shownN(), live = n === cache.moves.length, phase = n % C.CYCLE;
+    if (result() && live) { bar.className = 'modbar off'; bar.innerHTML = '<span class="mi">🎲</span><div class="mt"><b>Хаос</b><small>Партия окончена</small></div>'; return; }
+    if (rl.active && live && phase === 0) {
       bar.className = 'modbar rolling';
       bar.innerHTML = '<span class="mi">🎲</span><div class="mt"><b>Рулетка…</b><small>Выбираем модификатор</small></div>';
       return;
     }
-    const mod = C.activeMod(curState());
+    const mod = C.activeMod(cache.states[n]);
     if (mod) {
       const left = C.MOD_PLIES - phase;
       bar.className = 'modbar on';
@@ -526,6 +807,25 @@
     sqEls.push(d);
   }
 
+  const sqEls4 = [];
+  const boardEl4 = $('#board4');
+  for (let i = 0; i < 196; i++) {
+    const d = document.createElement('div');
+    d.className = 'sq';
+    boardEl4.appendChild(d);
+    sqEls4.push(d);
+  }
+  const drawBoard = () => (G.four ? renderBoard4() : renderBoard());
+
+  // Просмотр истории: n = 0 (начальная позиция) … число ходов (текущая позиция)
+  function viewAt(n) {
+    if (!cache) return;
+    const tot = cache.moves.length;
+    viewPly = n >= tot ? null : Math.max(0, n);
+    sel = null; targets = new Map();
+    refresh();
+  }
+
   function refresh() {
     if (!G) return;
     if (G.loading) {
@@ -535,29 +835,35 @@
       $('#bLobby').onclick = () => leaveGame();
       return;
     }
+    if (!G.local && G.my && G.rematchGame && G.rematchGame !== G.id) { openGame(G.rematchGame); return; }
     derive();
+    if (viewPly !== null && viewPly >= cache.moves.length) viewPly = null;
     $('#game').classList.toggle('chaos', G.variant === 'chaos');
+    $('#game').classList.toggle('four', !!G.four);
+    $('#board').hidden = !!G.four; $('#board4').hidden = !G.four; $('#players4').hidden = !G.four;
+    $('#topPlayer').hidden = !!G.four; $('#bottomPlayer').hidden = !!G.four;
     if (result() && rl.active) cancelRoulette();
     soundNewMoves();
     maybeSpin();
     if (sel !== null && (!canMove() || !cache.legal.some(m => m.from === sel))) { sel = null; targets = new Map(); }
-    renderBoard();
-    renderPlayers();
+    drawBoard();
+    if (G.four) renderPlayers4(); else renderPlayers();
     renderSide();
     renderModbar();
+    maybeRematch();
     tick();
   }
 
   function renderBoard() {
-    const cur = curState(), flip = isFlipped();
-    const lm = cache.moves[cache.moves.length - 1];
-    const prev = cache.states[cache.states.length - 2];
+    const n = shownN(), cur = cache.states[n], flip = isFlipped();
+    const lm = cache.moves[n - 1];
+    const prev = cache.states[n - 1];
     const v = G.variant;
     let checkSq = -1;
     if (v === 'chaos') { if (C.kingAttacked(cur)) checkSq = C.findKing(cur.board, cur.turn); }
     else if (v !== 'antichess' && C.inCheck(cur.board, cur.turn, v)) checkSq = C.findKing(cur.board, cur.turn);
     const boom = new Set();
-    if (lm && lm.cap && prev && (v === 'atomic' || C.activeMod(prev) === 'atomic')) {
+    if (lm && lm.cap && prev && (v === 'atomic' || boomMod(C.activeMod(prev)))) {
       boom.add(lm.to);
       for (let i = 0; i < 64; i++) if (prev.board[i] && !cur.board[i] && i !== lm.from) boom.add(i);
     }
@@ -583,6 +889,40 @@
     }
   }
 
+  // Крестообразная доска 14×14: вид повёрнут так, чтобы ваши фигуры были внизу
+  function renderBoard4() {
+    const n = shownN(), cur = cache.states[n], k = view4Rot();
+    const lm = cache.moves[n - 1] && !cache.moves[n - 1].ev ? cache.moves[n - 1] : null;
+    for (let dy = 0; dy < 14; dy++) {
+      for (let dx = 0; dx < 14; dx++) {
+        let x = dx, y = dy;
+        for (let q = 0; q < k; q++) { const nx = 13 - y; y = x; x = nx; }
+        const f = x, r = 13 - y, el = sqEls4[dy * 14 + dx];
+        if (!C4.isPlay(f, r)) { el.className = 'sq void'; el.innerHTML = ''; delete el.dataset.i; continue; }
+        const i = r * 14 + f;
+        el.dataset.i = i;
+        let cls = 'sq ' + ((r + f) % 2 === 0 ? 'dark' : 'light');
+        if (lm && (i === lm.from || i === lm.to)) cls += ' last';
+        if (i === sel) cls += ' sel';
+        el.className = cls;
+        const p = cur.board[i];
+        let html = '';
+        if (targets.has(i)) html += `<i class="hint${p ? ' cap' : ''}"></i>`;
+        if (p) html += Art.pieceSVG(p[1].toLowerCase(), 'p4' + p[0]);
+        el.innerHTML = html;
+      }
+    }
+  }
+
+  function renderPlayers4() {
+    const cur = curState(), res = result();
+    $('#players4').innerHTML = C4.ORDER.map(c => {
+      const p = G.players[c] || { name: '?' };
+      const cls = 'p4' + (!cur.alive[c] ? ' out' : '') + (!res && cur.turn === c ? ' turn' : '');
+      return `<div class="${cls}"><div class="row"><span class="pdot c${c}"></span><span class="pname">${esc(p.name)}${G.my === c ? ' (вы)' : ''}</span></div><span class="clock" data-c="${c}">—</span></div>`;
+    }).join('');
+  }
+
   function renderPlayers() {
     const bottom = isFlipped() ? 'b' : 'w', top = C.opp(bottom);
     const mk = (el, color) => {
@@ -596,6 +936,21 @@
 
   function statusLine() {
     const res = result();
+    if (G.four) {
+      const cur = curState();
+      if (res) {
+        let head;
+        if (res.winner === 'd') head = 'Ничья';
+        else if (G.my) head = res.winner === G.my ? 'Вы победили!' : `Победили ${CN[res.winner].toLowerCase()}`;
+        else head = `Победили ${CN[res.winner].toLowerCase()}`;
+        return `${head} — ${WHY[res.why] || res.why}`;
+      }
+      if (viewing()) return `📖 Просмотр: ход ${shownN()} из ${cache.moves.length}. Игра продолжается`;
+      if (G.my && !cur.alive[G.my]) return 'Вы выбыли. Можно наблюдать за партией';
+      if (G.my === cur.turn) return 'Ваш ход';
+      const p = G.players[cur.turn];
+      return `Ход ${CNG[cur.turn]}${p ? ' (' + p.name + ')' : ''}`;
+    }
     if (res) {
       let head;
       if (res.winner === 'd') head = 'Ничья';
@@ -604,6 +959,7 @@
       else head = (res.winner === 'w' ? 'Белые' : 'Чёрные') + ' победили';
       return `${head} — ${WHY[res.why] || res.why}`;
     }
+    if (viewing()) return `📖 Просмотр: ход ${shownN()} из ${cache.moves.length}. Партия продолжается`;
     if (locked()) return '🎲 Крутится рулетка…';
     const cur = curState();
     const side = cur.turn === 'w' ? 'белых' : 'чёрных';
@@ -616,43 +972,83 @@
   }
 
   function renderSide() {
-    const v = VARIANTS[G.variant];
-    $('#gameInfo').innerHTML = `${v.icon} ${v.name} • ${tcLabel(G.tc)}<small>${G.local ? 'Локальная партия' : G.my ? '' : 'Вы наблюдаете'}</small>`;
-    const res = result();
+    const res = result(), n = shownN(), live = !viewing(), tot = cache.moves.length;
+    if (G.four) {
+      const mine = G.my ? (curState().alive[G.my] ? 'Вы играете ' + CNI[G.my] : 'Вы выбыли') : 'Вы наблюдаете';
+      $('#gameInfo').innerHTML = `👥 4 игрока • ${tcLabel(G.tc)}<small>${mine}</small>`;
+    } else {
+      const v = VARIANTS[G.variant];
+      $('#gameInfo').innerHTML = `${v.icon} ${v.name} • ${tcLabel(G.tc)}<small>${G.local ? 'Локальная партия' : G.my ? '' : 'Вы наблюдаете'}</small>`;
+    }
     const st = $('#status');
     st.textContent = statusLine();
     st.className = 'status' + (res ? ' over' : '');
 
+    // список ходов: на любой можно нажать и посмотреть позицию после него
     const mv = $('#moves');
+    const cls = j => (j + 1 === n ? (live ? ' cur' : ' cur view') : '');
     let html = '';
-    for (let i = 0; i < cache.sans.length; i += 2) {
-      const last = cache.sans.length - 1;
-      html += `<span class="n">${i / 2 + 1}.</span><span class="mv${i === last ? ' cur' : ''}">${esc(cache.sans[i])}</span>` +
-        `<span class="mv${i + 1 === last ? ' cur' : ''}">${cache.sans[i + 1] ? esc(cache.sans[i + 1]) : ''}</span>`;
+    if (G.four) {
+      mv.className = 'moves four';
+      html = cache.sans.map((t, i) => !t ? '' :
+        `<span class="mv${cls(i)}${cache.moves[i].ev ? ' out' : ''}" data-ply="${i + 1}"><i class="pdot c${cache.movers[i]}"></i>${esc(t)}</span>`).join('');
+    } else {
+      mv.className = 'moves';
+      for (let i = 0; i < cache.sans.length; i += 2) {
+        html += `<span class="n">${i / 2 + 1}.</span><span class="mv${cls(i)}" data-ply="${i + 1}">${esc(cache.sans[i])}</span>` +
+          (cache.sans[i + 1] ? `<span class="mv${cls(i + 1)}" data-ply="${i + 2}">${esc(cache.sans[i + 1])}</span>` : '<span class="mv"></span>');
+      }
     }
     mv.innerHTML = html;
-    mv.scrollTop = mv.scrollHeight;
+    const curEl = mv.querySelector('.cur');
+    if (live || !curEl) mv.scrollTop = mv.scrollHeight;
+    else mv.scrollTop += curEl.getBoundingClientRect().top - mv.getBoundingClientRect().top - mv.clientHeight / 2;
+
+    const hn = $('#histnav');
+    hn.hidden = tot === 0;
+    hn.innerHTML =
+      `<button data-nav="first" title="К началу партии"${n <= 0 ? ' disabled' : ''}>⏮</button>` +
+      `<button data-nav="prev" title="Ход назад (←)"${n <= 0 ? ' disabled' : ''}>◀</button>` +
+      `<button data-nav="next" title="Ход вперёд (→)"${live ? ' disabled' : ''}>▶</button>` +
+      (live ? '<button data-nav="live" class="live" disabled>Текущая позиция</button>'
+            : '<button data-nav="live" class="live primary">↩ Вернуться к игре</button>');
 
     const ctrl = $('#controls');
-    const player = G.local || G.my;
-    let b = '<button id="bFlip">⇅ Перевернуть</button>';
-    if (!res && G.my && !G.local) {
-      if (G.drawOffer && G.drawOffer !== G.my) {
-        b += '<button id="bAcceptDraw" class="primary">Принять ничью</button><button id="bDeclineDraw">Отклонить</button>';
-      } else if (G.drawOffer === G.my) {
-        b += '<button disabled>Ничья предложена</button>';
-      } else if (G.moves.length >= 2) {
-        b += '<button id="bDraw">½ Предложить ничью</button>';
+    let b;
+    if (G.four) {
+      const alive = !!(G.my && curState().alive[G.my]);
+      b = '<button id="bFlip">⟳ Повернуть</button>';
+      if (!res && alive) b += '<button id="bResign4" class="danger">Сдаться</button>';
+      if (res && G.my) b += rematchButton();
+      if (res || !alive) b += '<button id="bLobby" class="primary">В лобби</button>';
+    } else {
+      const player = G.local || G.my;
+      b = '<button id="bFlip">⇅ Перевернуть</button>';
+      if (!res && G.my && !G.local) {
+        if (G.drawOffer && G.drawOffer !== G.my) {
+          b += '<button id="bAcceptDraw" class="primary">Принять ничью</button><button id="bDeclineDraw">Отклонить</button>';
+        } else if (G.drawOffer === G.my) {
+          b += '<button disabled>Ничья предложена</button>';
+        } else if (G.moves.length >= 2) {
+          b += '<button id="bDraw">½ Предложить ничью</button>';
+        }
+        b += G.moves.length < 2 ? '<button id="bAbort" class="danger">Отменить партию</button>' : '<button id="bResign" class="danger">Сдаться</button>';
       }
-      b += G.moves.length < 2 ? '<button id="bAbort" class="danger">Отменить партию</button>' : '<button id="bResign" class="danger">Сдаться</button>';
+      if (!res && G.local) b += '<button id="bResignW" class="danger">Белые сдаются</button><button id="bResignB" class="danger">Чёрные сдаются</button>';
+      if (res && player) b += rematchButton();
+      if (res || !player || G.local) b += '<button id="bLobby" class="primary">В лобби</button>';
     }
-    if (!res && G.local) b += '<button id="bResignW" class="danger">Белые сдаются</button><button id="bResignB" class="danger">Чёрные сдаются</button>';
-    if (res || !player || G.local) b += '<button id="bLobby" class="primary">В лобби</button>';
     ctrl.innerHTML = b;
     const on = (id, fn) => { const e = $('#' + id); if (e) e.onclick = fn; };
     on('bFlip', () => { flipManual = !flipManual; refresh(); });
     on('bLobby', () => leaveGame());
+    on('bRematch', doRematch);
     on('bResign', () => { if (confirm('Сдаться?')) finish({ winner: C.opp(G.my), why: 'resign' }); });
+    on('bResign4', () => {
+      if (!confirm('Сдаться? Ваши фигуры станут серыми, а вы выбываете из партии.')) return;
+      const me4 = G.my;
+      out4(me4, 'resign', 4, () => curState().alive[me4]).catch(() => toast('Не удалось сдаться, попробуйте ещё раз'));
+    });
     on('bResignW', () => finish({ winner: 'b', why: 'resign' }));
     on('bResignB', () => finish({ winner: 'w', why: 'resign' }));
     on('bAbort', () => finish({ winner: 'x', why: 'aborted' }));
@@ -665,8 +1061,29 @@
     if (!G || G.loading || !cache) return;
     const t = now();
     const res = result();
-    const turn = G.moves.length % 2 === 0 ? 'w' : 'b';
     const hasClock = G.tc && G.tc.t;
+    if (G.four) {
+      const cur = curState();
+      for (const el of document.querySelectorAll('.clock')) {
+        const c = el.dataset.c;
+        if (!hasClock) { el.textContent = '—'; continue; }
+        if (!cur.alive[c]) { el.textContent = '✕'; el.classList.remove('active', 'low'); continue; }
+        const rem = remaining4(c, t);
+        el.textContent = fmtClock(Math.max(0, rem));
+        el.classList.toggle('active', !res && cur.turn === c);
+        el.classList.toggle('low', rem < 20000 && !res);
+      }
+      if (hasClock && !res && G.my && cur.alive[G.my]) {
+        const n = cache.moves.length;
+        if (finishing4 !== n && remaining4(cur.turn, t) <= 0) {   // время текущего игрока вышло: он выбывает
+          finishing4 = n;
+          const back = () => setTimeout(() => { finishing4 = -1; }, 2000);
+          out4(cur.turn, 'time', 0).then(ok => { if (!ok) back(); }).catch(back);
+        }
+      }
+      return;
+    }
+    const turn = G.moves.length % 2 === 0 ? 'w' : 'b';
     for (const el of document.querySelectorAll('.clock')) {
       const c = el.dataset.c;
       if (!hasClock) { el.textContent = '—'; continue; }
@@ -686,7 +1103,7 @@
 
   // ---------- Взаимодействие с доской ----------
   function canMove() {
-    if (!G || G.loading || !cache || result() || locked()) return false;
+    if (!G || G.loading || !cache || result() || locked() || viewing()) return false;
     return G.local || G.my === curState().turn;
   }
 
@@ -700,7 +1117,7 @@
       }
       if (!targets.size) sel = null;
     }
-    renderBoard();
+    drawBoard();
   }
 
   function tryMove(from, to) {
@@ -721,7 +1138,7 @@
     box.innerHTML = '';
     for (const m of arr) {
       const b = document.createElement('button');
-      b.innerHTML = Art.pieceSVG(m.promo, color);
+      b.innerHTML = Art.pieceSVG(m.promo, G.four ? 'p4' + color : color);
       b.onclick = () => { $('#promo').hidden = true; doMove(m); };
       box.appendChild(b);
     }
@@ -731,16 +1148,16 @@
     if (e.target.id === 'promo') { $('#promo').hidden = true; select(null); }
   });
 
-  boardEl.addEventListener('pointerdown', e => {
+  function onBoardDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
     const el = e.target.closest('.sq');
-    if (!el || !G || !canMove()) return;
+    if (!el || el.classList.contains('void') || !G || !canMove()) return;
     const i = +el.dataset.i;
     if (sel !== null && targets.has(i)) { tryMove(sel, i); return; }
     const p = curState().board[i];
-    if (p && C.colorOf(p) === curState().turn) {
+    if (p && ownerOf(p) === curState().turn) {
       select(i);
-      const pe = sel === null ? null : sqEls.find(s => +s.dataset.i === i).querySelector('svg.piece');
+      const pe = sel === null ? null : el.querySelector('svg.piece');
       if (!pe) return;
       const ghost = pe.cloneNode(true);
       ghost.classList.add('ghost');
@@ -752,7 +1169,9 @@
       moveGhost(e);
       e.preventDefault();
     } else select(null);
-  });
+  }
+  boardEl.addEventListener('pointerdown', onBoardDown);
+  boardEl4.addEventListener('pointerdown', onBoardDown);
   function moveGhost(e) {
     drag.ghost.style.left = e.clientX + 'px';
     drag.ghost.style.top = e.clientY + 'px';
@@ -768,13 +1187,13 @@
     d.ghost.remove();
     const under = document.elementFromPoint(e.clientX, e.clientY);
     const sqEl = under && under.closest && under.closest('.sq');
-    const to = sqEl && boardEl.contains(sqEl) ? +sqEl.dataset.i : null;
+    const to = sqEl && sqEl.closest('.board') && sqEl.dataset.i !== undefined ? +sqEl.dataset.i : null;
     if (to !== null && to !== d.from && d.moved) tryMove(d.from, to);
-    else renderBoard();
+    else drawBoard();
   });
   window.addEventListener('pointercancel', () => {
     if (!drag) return;
-    drag.ghost.remove(); drag = null; renderBoard();
+    drag.ghost.remove(); drag = null; if (G) drawBoard();
   });
 
   // ---------- Инициализация ----------
@@ -800,9 +1219,44 @@
       if (!n) return;
       me.name = n; store.set('chess_name', n); setName();
     };
-    $('#createBtn').onclick = () => createSeek().catch(e => { console.error(e); toast('Не удалось создать вызов'); });
+    $('#createBtn').onclick = () => (vSel === 'four' ? createRoom() : createSeek()).catch(e => { console.error(e); toast('Не удалось создать ' + (vSel === 'four' ? 'комнату' : 'вызов')); });
     $('#cancelBtn').onclick = () => cancelSeek();
-    $('#localBtn').onclick = startLocal;
+    $('#localBtn').onclick = () => startLocal();
+    $('#homeLink').onclick = e => { e.preventDefault(); goHome(); };
+    $('#resumeBtn').onclick = () => { const id = store.get('chess_game'); if (id) openGame(id, true); };
+    $('#roomLeave').onclick = leaveRoom;
+    $('#modCount').textContent = C.MOD_IDS.length;
+
+    // своё время партии
+    const onTC = () => {
+      tcSel = { t: clampInt($('#tcMin').value, 1, 180, tcSel.t), inc: clampInt($('#tcInc').value, 0, 120, tcSel.inc) };
+      syncTC(false);
+    };
+    $('#tcMin').oninput = $('#tcInc').oninput = onTC;
+    $('#tcMin').onchange = $('#tcInc').onchange = () => { onTC(); syncTC(true); };
+
+    // просмотр истории: клик по ходу, кнопки и стрелки на клавиатуре
+    $('#moves').addEventListener('click', e => {
+      const el = e.target.closest('[data-ply]');
+      if (el && cache) viewAt(+el.dataset.ply);
+    });
+    $('#histnav').addEventListener('click', e => {
+      const b = e.target.closest('button[data-nav]');
+      if (!b || !cache) return;
+      const k = b.dataset.nav, n = shownN(), tot = cache.moves.length;
+      viewAt(k === 'first' ? 0 : k === 'prev' ? n - 1 : k === 'next' ? n + 1 : tot);
+    });
+    window.addEventListener('keydown', e => {
+      if (!G || G.loading || !cache || $('#game').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName)) return;
+      const n = shownN(), tot = cache.moves.length;
+      if (e.key === 'ArrowLeft') viewAt(n - 1);
+      else if (e.key === 'ArrowRight') viewAt(n + 1);
+      else if (e.key === 'Home') viewAt(0);
+      else if (e.key === 'End') viewAt(tot);
+      else return;
+      e.preventDefault();
+    });
     buildLobbyControls();
     buildModList();
     showView('lobby');
@@ -837,6 +1291,9 @@
       }
       if (!G) renderLobby();
     });
+
+    // комнаты на 4 игрока
+    fb.onValue(R('rooms4'), s => { rooms = s.val() || {}; onRooms(); });
 
     // продолжить незавершённую партию
     const saved = store.get('chess_game');

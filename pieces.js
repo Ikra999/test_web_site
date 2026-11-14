@@ -105,6 +105,38 @@
       '<circle cx="32" cy="48" r="9" fill="#fff" stroke="#8a5200" stroke-width="2"/>' +
       '<path d="M16 32 L32 18 L48 32" fill="none" stroke="#ffb14d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<path d="M16 18 L32 4 L48 18" fill="none" stroke="#ffd9a0" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>',
+    heavy: () =>
+      [0, 45, 90, 135, 180, 225, 270, 315].map(a => arrow(a, '#ffb14d')).join('') +
+      '<path d="M24 40 L22 26 L28 32 L32 22 L36 32 L42 26 L40 40 Z" fill="#ffd24a" stroke="#8a6200" stroke-width="1.5" stroke-linejoin="round"/>',
+    frozenknight: () => {
+      let g = '';
+      for (const a of [0, 60, 120]) {
+        g += `<g transform="rotate(${a} 32 32)"><path d="M32 6 V58" stroke="#a8c8ff" stroke-width="4" stroke-linecap="round"/>` +
+          '<path d="M25 14 L32 20 L39 14 M25 50 L32 44 L39 50" fill="none" stroke="#a8c8ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g>';
+      }
+      return g + '<circle cx="32" cy="32" r="12" fill="#1d1b24"/>' +
+        '<path d="M28 41 V27 H36 M33 23 L38 27 L33 31" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    },
+    kamikaze: () =>
+      '<circle cx="29" cy="39" r="19" fill="#2b2b33" stroke="#9a9aa8" stroke-width="2.5"/>' +
+      '<path d="M20 31 Q23 26 29 25" fill="none" stroke="#6a6a78" stroke-width="3" stroke-linecap="round"/>' +
+      '<path d="M40 24 Q48 14 54 16" fill="none" stroke="#d2a86a" stroke-width="3.5" stroke-linecap="round"/>' +
+      `<polygon points="${star(55, 13, 8, 3.5, 6)}" fill="#ffd24a"/><circle cx="55" cy="13" r="2.5" fill="#fff"/>`,
+    retreat: () =>
+      '<path d="M26 8 V34 H13 L32 58 L51 34 H38 V8 Z" fill="#ff8a8a" stroke="#8a2a2a" stroke-width="2" stroke-linejoin="round"/>',
+    kbswap: () =>
+      '<path d="M8 34 H50 M42 25 L53 34 L42 43" fill="none" stroke="#ff9ec7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M56 54 H14 M22 45 L11 54 L22 63" fill="none" stroke="#ffd0e6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -4)"/>' +
+      '<text x="8" y="24" font-size="22" fill="#fff" font-family="system-ui,sans-serif">♞</text>' +
+      '<text x="36" y="24" font-size="22" fill="#fff" font-family="system-ui,sans-serif">♝</text>',
+    queenking: () =>
+      '<path d="M18 44 L15 24 L26 33 L32 18 L38 33 L49 24 L46 44 Z" fill="#9fd0ff" stroke="#2c5a8a" stroke-width="2" stroke-linejoin="round"/>' +
+      '<rect x="18" y="46" width="28" height="6" rx="2.5" fill="#9fd0ff" stroke="#2c5a8a" stroke-width="2"/>' +
+      '<path d="M6 6 L14 14 M58 6 L50 14 M6 58 L14 50 M58 58 L50 50" stroke="#ff9a9a" stroke-width="4" stroke-linecap="round"/>',
+    pawnrook: () =>
+      [0, 90, 180, 270].map(a => arrow(a, '#e0a060')).join('') +
+      '<circle cx="32" cy="32" r="9" fill="#fff" stroke="#6a4a22" stroke-width="2"/>' +
+      '<rect x="27" y="37" width="10" height="4" rx="2" fill="#6a4a22"/>',
     kingqueen: () =>
       '<path d="M10 46 L6 20 L21 32 L32 10 L43 32 L58 20 L54 46 Z" fill="#ffd24a" stroke="#8a6200" stroke-width="2.5" stroke-linejoin="round"/>' +
       '<rect x="10" y="48" width="44" height="8" rx="3" fill="#ffd24a" stroke="#8a6200" stroke-width="2.5"/>' +

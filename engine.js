@@ -21,7 +21,8 @@
   // Модификатор действует MOD_PLIES полуходов (по одному ходу каждого игрока),
   // затем COOLDOWN полуход играется по обычным правилам, потом выпадает следующий.
   // Модификатор вычисляется из seed партии, поэтому у обоих игроков он одинаковый без сервера.
-  const MOD_IDS = ['atomic', 'antichess', 'knights', 'pawnking', 'frozen', 'forward', 'swap', 'peace', 'sprint', 'kingqueen'];
+  const MOD_IDS = ['atomic', 'antichess', 'knights', 'pawnking', 'frozen', 'forward', 'swap', 'peace', 'sprint', 'kingqueen',
+    'heavy', 'frozenknight', 'kamikaze', 'retreat', 'kbswap', 'queenking', 'pawnrook'];
   const MOD_PLIES = 2, COOLDOWN = 1, CYCLE = MOD_PLIES + COOLDOWN;
 
   function hash32(x) {
@@ -162,11 +163,17 @@
       let kind = t;
       if (mod) {
         if (mod === 'frozen' && t === 'q') continue;
+        if (mod === 'frozenknight' && t === 'n') continue;
         if (mod === 'knights' && t !== 'k') kind = 'n';
         else if (mod === 'pawnking' && t === 'p') kind = 'k';
+        else if (mod === 'pawnrook' && t === 'p') kind = 'r';
         else if (mod === 'swap' && t === 'b') kind = 'r';
         else if (mod === 'swap' && t === 'r') kind = 'b';
+        else if (mod === 'kbswap' && t === 'n') kind = 'b';
+        else if (mod === 'kbswap' && t === 'b') kind = 'n';
+        else if (mod === 'heavy' && (t === 'n' || t === 'b' || t === 'r')) kind = 'q';
         else if (mod === 'kingqueen' && t === 'k') kind = 'q';
+        else if (mod === 'queenking' && t === 'q') kind = 'k';
       }
 
       const add = (to, cap, ep) => {
@@ -244,6 +251,7 @@
     b[m.to] = m.promo ? (us === 'w' ? m.promo.toUpperCase() : m.promo) : p;
     if (m.castle === 'K') { b[m.from + 1] = b[m.from + 3]; b[m.from + 3] = null; }
     else if (m.castle === 'Q') { b[m.from - 1] = b[m.from - 4]; b[m.from - 4] = null; }
+    if (mod === 'kamikaze' && m.cap) b[m.to] = null; // бьющая фигура гибнет вместе с побитой
     if ((s.variant === 'atomic' || mod === 'atomic') && m.cap) {
       b[m.to] = null; // бьющая фигура взрывается
       const f = m.to & 7, r = m.to >> 3;
@@ -297,6 +305,10 @@
       if (mod === 'peace') {
         const quiet = ms.filter(m => !m.cap);
         return quiet.length ? quiet : ms;
+      }
+      if (mod === 'retreat') {
+        const bk = ms.filter(m => (us === 'w' ? (m.to >> 3) <= (m.from >> 3) : (m.to >> 3) >= (m.from >> 3)));
+        return bk.length ? bk : ms;
       }
       if (mod === 'forward') {
         const fw = ms.filter(m => (us === 'w' ? (m.to >> 3) >= (m.from >> 3) : (m.to >> 3) <= (m.from >> 3)));
